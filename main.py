@@ -73,7 +73,10 @@ Send me link or use me inline:
 @dp.channel_post_handler(extract_links)
 async def channel_iv(message: types.Message):
     link = message.links[0]
-    await message.edit_text(md.hide_link(f"https://a.devs.today/{link}") + message.text)
+    await message.edit_text(
+        md.hide_link(f"https://a.devs.today/{link}") + message.text_html,
+        parse_mode="html",
+    )
 
 
 @dp.message_handler(extract_links)
