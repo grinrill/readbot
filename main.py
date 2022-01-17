@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 
 # Initialize bot and dispatcher
-bot = Bot(token=API_TOKEN)
+bot = Bot(token=API_TOKEN, parse_mode="html")
 dp = Dispatcher(bot)
 
 
@@ -44,23 +44,23 @@ link_regex = re.compile(
 
 
 def extract_links_from_text(text):
-    text = q.query
     links = []
     for match in link_regex.finditer(text):
         links.append(match.group("url"))
 
     links = list(set(links))
+    return links
 
 
 def extract_links_from_query(q):
     q.links = extract_links_from_text(q.query)
-    return bool(links)
+    return bool(q.links)
 
 
 # return Dict with "ok" bool
 async def get_json(url: str):
     try:
-        async with aiohttp.ClientSession as session:
+        async with aiohttp.ClientSession() as session:
             resp = await session.get(
                 "https://a.devs.today/json", params={"url": url, "timeout": 60 * 2}
             )
@@ -72,7 +72,7 @@ async def get_json(url: str):
 
 async def get_cached_json(url: str):
     try:
-        async with aiohttp.ClientSession as session:
+        async with aiohttp.ClientSession() as session:
             resp = await session.get(
                 "https://a.devs.today/cachedJson",
                 params={"url": url, "timeout": 60 * 2},
@@ -95,8 +95,14 @@ async def send_welcome(message: types.Message):
         """
 Hello! I am Instant Read Bot!
 I make an Instant View from any web page.
+
+You can use me here, <a href="t.me/{me.username}?startgroup=1">add me to group</a> or channel or use me inline.
+In groups and dms I will try to create Instant View for each link I will see, in channels I will do this for only first link in each post.
+
 Send me link or use me inline:
-    """,
+    """.format(
+            me=await message.bot.me
+        ),
         reply_markup=kb,
     )
 
@@ -153,12 +159,12 @@ async def inline_iv(inline_query: types.InlineQuery):
 
 
 async def inline_iv_loader(link: str, id: int):
-    result = await inline_iv_loader(link)
+    result = await get_cached_json(link)
     if not result["ok"]:
         iv_link = f"https://a.devs.today/{link}"
 
         input_content = types.InputTextMessageContent(iv_link)
-        kb = type.InlineKeyboardMarkup()
+        kb = types.InlineKeyboardMarkup()
         kb.add(types.InlineKeyboardButton("Loading...", callback_data="pass"))
         return types.InlineQueryResultArticle(
             id=id,
@@ -176,7 +182,7 @@ async def inline_iv_loader(link: str, id: int):
         id=id,
         url=result["url"],
         title=f"""{result["title"]} | ⚡️Instant View""",
-        description=result("excerpt", ""),
+        description=result.get("excerpt"),
         input_message_content=input_content,
     )
 
@@ -189,13 +195,16 @@ async def on_chosen_inline(chosen: types.ChosenInlineResult):
 
     result = await get_json(link)
     if not result.get("ok"):
-        await chosen.edit_text(
-            f"""Sorry, can't load this <a href="{link}">article</a> :("""
+        await chosen.bot.edit_message_text(
+            f"""Sorry, can't load this <a href="{link}">article</a> :(""",
+            inline_message_id=chosen.inline_message_id,
+            reply_markup=types.InlineKeyboardMarkup(),
         )
         return
 
-    await chosen.edit_text(
+    await chosen.bot.edit_message_text(
         f"""<a href="https://a.devs.today/{result["url"]}">{result["title"]}</a>""",
+        inline_message_id=chosen.inline_message_id,
         reply_markup=types.InlineKeyboardMarkup(),
     )
 
