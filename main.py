@@ -3,6 +3,7 @@ import os
 import asyncio
 import re
 import logging
+import aiohttp
 
 from aiogram import Bot, Dispatcher, executor, types, md
 
@@ -42,14 +43,44 @@ link_regex = re.compile(
 )
 
 
-def extract_links_from_query(q):
+def extract_links_from_text(text):
     text = q.query
     links = []
     for match in link_regex.finditer(text):
         links.append(match.group("url"))
 
-    q.links = links
+    links = list(set(links))
+
+
+def extract_links_from_query(q):
+    q.links = extract_links_from_text(q.query)
     return bool(links)
+
+
+# return Dict with "ok" bool
+async def get_json(url: str):
+    try:
+        async with aiohttp.ClientSession as session:
+            resp = await session.get(
+                "https://a.devs.today/json", params={"url": url, "timeout": 60 * 2}
+            )
+            return await resp.json()
+    except Exception as e:
+        logger.exception("get_json")
+        return {"ok": False, "error": "local error", "exception": str(e)}
+
+
+async def get_cached_json(url: str):
+    try:
+        async with aiohttp.ClientSession as session:
+            resp = await session.get(
+                "https://a.devs.today/cachedJson",
+                params={"url": url, "timeout": 60 * 2},
+            )
+            return await resp.json()
+    except Exception as e:
+        logger.exception("get_json")
+        return {"ok": False, "error": "local error", "exception": str(e)}
 
 
 @dp.message_handler(commands=["start", "help"])
@@ -73,16 +104,38 @@ Send me link or use me inline:
 @dp.channel_post_handler(extract_links)
 async def channel_iv(message: types.Message):
     link = message.links[0]
-    await message.edit_text(md.hide_link(f"https://a.devs.today/{link}") + message.text)
+
+    result = await get_json(link)
+    if not result.get("ok"):
+        return
+
+    await asyncio.sleep(0.5)
+    await message.edit_text(
+        md.hide_link(f"""https://a.devs.today/{result["url"]}""") + message.text
+    )
 
 
 @dp.message_handler(extract_links)
 async def iv(message: types.Message):
-    # print(message.links)
-    await message.chat.do("typing")
-    for link in message.links:
-        await asyncio.sleep(0.5)
-        await message.reply(f"https://a.devs.today/{link}")
+    asyncio.gather(*[iv_loader(message, link) for link in message.links])
+
+
+async def iv_loader(message: types.Message, link: str):
+    m = await message.reply(
+        f"""Loading <a href="{link}">article</a>, wait a little..."""
+    )
+
+    result = await get_json(link)
+    if not result.get("ok"):
+        await m.edit_text(f"""Sorry, can't load this <a href="{link}">article</a> :(""")
+        if m.chat.id < 0:
+            await asyncio.sleep(5)
+            await m.delete()
+        return
+
+    await m.edit_text(
+        f"""<a href="https://a.devs.today/{result["url"]}">{result["title"]}</a>"""
+    )
 
 
 @dp.message_handler(lambda m: m.chat.id > 0)
@@ -92,20 +145,59 @@ async def not_iv(message: types.Message):
 
 @dp.inline_handler(extract_links_from_query)
 async def inline_iv(inline_query: types.InlineQuery):
-    items = []
-    for link in inline_query.links:
+    items = await asyncio.gather(
+        *[inline_iv_loader(link, id) for (id, link) in enumerate(inline_query.links)]
+    )
+
+    await inline_query.answer(results=items, cache_time=1)
+
+
+async def inline_iv_loader(link: str, id: int):
+    result = await inline_iv_loader(link)
+    if not result["ok"]:
         iv_link = f"https://a.devs.today/{link}"
 
         input_content = types.InputTextMessageContent(iv_link)
-        item = types.InlineQueryResultArticle(
-            id=hash(link),
+        kb = type.InlineKeyboardMarkup()
+        kb.add(types.InlineKeyboardButton("Loading...", callback_data="pass"))
+        return types.InlineQueryResultArticle(
+            id=id,
+            url=iv_link,
             title="⚡️Instant View",
-            description=iv_link,
+            # description=iv_link,
             input_message_content=input_content,
+            reply_markup=kb,
         )
-        items.append(item)
 
-    await inline_query.answer(results=items, cache_time=1)
+    input_content = types.InputTextMessageContent(
+        f"""<a href="https://a.devs.today/{result["url"]}">{result["title"]}</a>"""
+    )
+    return types.InlineQueryResultArticle(
+        id=id,
+        url=result["url"],
+        title=f"""{result["title"]} | ⚡️Instant View""",
+        description=result("excerpt", ""),
+        input_message_content=input_content,
+    )
+
+
+@dp.chosen_inline_handler()
+async def on_chosen_inline(chosen: types.ChosenInlineResult):
+    links = extract_links_from_text(chosen.query)
+    id = int(chosen.result_id)
+    link = links[id]
+
+    result = await get_json(link)
+    if not result.get("ok"):
+        await chosen.edit_text(
+            f"""Sorry, can't load this <a href="{link}">article</a> :("""
+        )
+        return
+
+    await chosen.edit_text(
+        f"""<a href="https://a.devs.today/{result["url"]}">{result["title"]}</a>""",
+        reply_markup=types.InlineKeyboardMarkup(),
+    )
 
 
 @dp.inline_handler()
