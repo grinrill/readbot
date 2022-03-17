@@ -99,7 +99,7 @@ I make an Instant View from any web page.
 You can use me here, <a href="t.me/{me.username}?startgroup=1">add me to group</a> or channel or use me inline.
 In groups and dms I will try to create Instant View for each link I will see, in channels I will do this for only first link in each post.
 
-<i>If Instant View does not work for some sites, write about it to <a href="tg://user?id=2505806">BrinDev support</a> and we will try to fix it.</i>
+<i>If Instant View does not work for some sites, write about it to <a href="tg://user?id=2505806">BrainDev support</a> and we will try to fix it.</i>
 
 Send me link or use me inline:
     """.format(
