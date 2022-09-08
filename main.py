@@ -163,9 +163,10 @@ async def inline_iv(inline_query: types.InlineQuery):
 async def inline_iv_loader(link: str, id: int):
     result = await get_cached_json(link)
     if not result["ok"]:
+        text = f"""Loading <a href="{link}">article</a>, wait a little..."""
         iv_link = f"https://a.devs.today/{link}"
 
-        input_content = types.InputTextMessageContent(iv_link)
+        input_content = types.InputTextMessageContent(text)
         kb = types.InlineKeyboardMarkup()
         kb.add(types.InlineKeyboardButton("Loading...", callback_data="pass"))
         return types.InlineQueryResultArticle(
