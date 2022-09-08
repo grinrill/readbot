@@ -119,7 +119,7 @@ async def channel_iv(message: types.Message):
 
     await asyncio.sleep(0.5)
     await message.edit_text(
-        md.hide_link(f"""https://a.devs.today/{result["url"]}""") + message.text
+        md.hide_link(f"""https://a.devs.today/{result["url"]}""") + message.html_text
     )
 
 
